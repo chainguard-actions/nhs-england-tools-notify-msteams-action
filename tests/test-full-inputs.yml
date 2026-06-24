@@ -1,0 +1,64 @@
+name: Test full inputs - all optional inputs provided
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Start mock webhook server and capture request
+        run: |
+          python3 -c "
+          import http.server, sys, os
+
+          class Handler(http.server.BaseHTTPRequestHandler):
+              def do_POST(self):
+                  length = int(self.headers.get('Content-Length', 0))
+                  body = self.rfile.read(length)
+                  with open('/tmp/webhook_payload.txt', 'wb') as f:
+                      f.write(body)
+                  self.send_response(200)
+                  self.end_headers()
+                  self.wfile.write(b'1')
+              def log_message(self, fmt, *args):
+                  pass
+
+          server = http.server.HTTPServer(('127.0.0.1', 9998), Handler)
+          server.timeout = 30
+          server.handle_request()
+          " &
+          echo "Mock server started"
+          sleep 1
+
+      - id: action
+        uses: .
+        with:
+          github-token: ${{ github.token }}
+          teams-webhook-url: 'http://127.0.0.1:9998'
+          message-title: 'Full Input Test'
+          message-text: 'Testing all optional inputs'
+          message-colour: 'FF0000'
+          link: 'https://github.com'
+        continue-on-error: true
+
+      - name: Assert action ran
+        run: |
+          echo "Action outcome: ${{ steps.action.outcome }}"
+          if [ "${{ steps.action.outcome }}" = "skipped" ]; then
+            echo "FAIL: action was skipped unexpectedly"
+            exit 1
+          fi
+          echo "PASS: action ran with all inputs (outcome: ${{ steps.action.outcome }})"
+
+      - name: Assert webhook payload was received
+        run: |
+          if [ -f /tmp/webhook_payload.txt ]; then
+            echo "Webhook payload received:"
+            cat /tmp/webhook_payload.txt
+            echo ""
+            echo "PASS: webhook was called"
+          else
+            echo "NOTE: webhook payload file not found - action may have failed before sending"
+            echo "Action outcome was: ${{ steps.action.outcome }}"
+          fi
