@@ -1,0 +1,192 @@
+name: 'CI/CD pull request'
+
+# The total recommended execution time for the "CI/CD Pull Request" workflow is around 20 minutes.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  guard-dist:
+    name: 'Guard: prevent committed dist changes'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout code'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: 'Fail if dist/ contains changes'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE_REF"...HEAD -- dist/ | grep -q .; then
+            echo "dist/ changes detected in this PR. This repository expects dist to be updated only by release automation." >&2
+            echo "Remove dist/ changes from your PR. They will be generated during release." >&2
+            exit 1
+          else
+            echo "No dist/ changes detected in this PR. Proceeding."
+          fi
+  metadata:
+    name: 'Set CI/CD metadata'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    needs: [guard-dist]
+    outputs:
+      build_datetime_london: ${{ steps.variables.outputs.build_datetime_london }}
+      build_datetime: ${{ steps.variables.outputs.build_datetime }}
+      build_timestamp: ${{ steps.variables.outputs.build_timestamp }}
+      build_epoch: ${{ steps.variables.outputs.build_epoch }}
+      nodejs_version: ${{ steps.variables.outputs.nodejs_version }}
+      python_version: ${{ steps.variables.outputs.python_version }}
+      terraform_version: ${{ steps.variables.outputs.terraform_version }}
+      version: ${{ steps.variables.outputs.version }}
+      does_pull_request_exist: ${{ steps.pr_exists.outputs.does_pull_request_exist }}
+    steps:
+      - name: 'Checkout code'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: 'Set up Node.js'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: 'Install dependencies'
+        run: npm ci
+      - name: 'Build action bundle (dry-run context)'
+        run: npm run package
+      - name: 'Generate GitHub App token'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      - name: 'Mask GitHub App token'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: echo "::add-mask::$APP_TOKEN"
+      - name: 'Semantic Release'
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        id: semantic
+        with:
+          dry_run: true
+          extra_plugins: |
+            @semantic-release/git
+            @semantic-release/github
+            @semantic-release/exec
+            conventional-changelog-conventionalcommits
+            @semantic-release/changelog
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: 'Set CI/CD variables'
+        id: variables
+        env:
+          NEW_RELEASE_VERSION: ${{ steps.semantic.outputs.new_release_version }}
+        run: |
+          datetime=$(date -u +'%Y-%m-%dT%H:%M:%S%z')
+          BUILD_DATETIME=$datetime make version-create-effective-file
+          echo "build_datetime_london=$(TZ=Europe/London date --date=$datetime +'%Y-%m-%dT%H:%M:%S%z')" >> $GITHUB_OUTPUT
+          echo "build_datetime=$datetime" >> $GITHUB_OUTPUT
+          echo "build_timestamp=$(date --date=$datetime -u +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+          echo "build_epoch=$(date --date=$datetime -u +'%s')" >> $GITHUB_OUTPUT
+          echo "nodejs_version=$(grep "^nodejs" .tool-versions | cut -f2 -d' ')" >> $GITHUB_OUTPUT
+          echo "python_version=$(grep "^nodejs" .tool-versions | cut -f2 -d' ')" >> $GITHUB_OUTPUT
+          echo "terraform_version=$(grep "^terraform" .tool-versions | cut -f2 -d' ')" >> $GITHUB_OUTPUT
+          safe_version=$(printf '%s' "$NEW_RELEASE_VERSION" | tr -d '\n\r')
+          echo "version=$safe_version" >> $GITHUB_OUTPUT
+      - name: 'Check if pull request exists for this branch'
+        id: pr_exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch_name=${GITHUB_HEAD_REF:-$(echo "$GITHUB_REF" | sed 's#refs/heads/##')}
+          echo "Current branch is '$branch_name'"
+          if gh pr list --head "$branch_name" | grep -q .; then
+            echo "Pull request exists"
+            echo "does_pull_request_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "Pull request doesn't exist"
+            echo "does_pull_request_exist=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 'List variables'
+        env:
+          BUILD_DATETIME_LONDON: ${{ steps.variables.outputs.build_datetime_london }}
+          BUILD_DATETIME: ${{ steps.variables.outputs.build_datetime }}
+          BUILD_TIMESTAMP: ${{ steps.variables.outputs.build_timestamp }}
+          BUILD_EPOCH: ${{ steps.variables.outputs.build_epoch }}
+          NODEJS_VERSION: ${{ steps.variables.outputs.nodejs_version }}
+          PYTHON_VERSION: ${{ steps.variables.outputs.python_version }}
+          TERRAFORM_VERSION: ${{ steps.variables.outputs.terraform_version }}
+          VERSION: ${{ steps.variables.outputs.version }}
+          DOES_PULL_REQUEST_EXIST: ${{ steps.pr_exists.outputs.does_pull_request_exist }}
+        run: |
+          export BUILD_DATETIME_LONDON
+          export BUILD_DATETIME
+          export BUILD_TIMESTAMP
+          export BUILD_EPOCH
+          export NODEJS_VERSION
+          export PYTHON_VERSION
+          export TERRAFORM_VERSION
+          export VERSION
+          export DOES_PULL_REQUEST_EXIST
+          make list-variables
+  commit-stage: # Recommended maximum execution time is 2 minutes
+    name: 'Commit stage'
+    needs: [metadata]
+    uses: ./.github/workflows/stage-1-commit.yaml
+    with:
+      build_datetime: '${{ needs.metadata.outputs.build_datetime }}'
+      build_timestamp: '${{ needs.metadata.outputs.build_timestamp }}'
+      build_epoch: '${{ needs.metadata.outputs.build_epoch }}'
+      nodejs_version: '${{ needs.metadata.outputs.nodejs_version }}'
+      python_version: '${{ needs.metadata.outputs.python_version }}'
+      terraform_version: '${{ needs.metadata.outputs.terraform_version }}'
+      version: '${{ needs.metadata.outputs.version }}'
+    secrets: inherit
+  test-stage: # Recommended maximum execution time is 5 minutes
+    name: 'Test stage'
+    needs: [metadata, commit-stage]
+    uses: ./.github/workflows/stage-2-test.yaml
+    with:
+      build_datetime: '${{ needs.metadata.outputs.build_datetime }}'
+      build_timestamp: '${{ needs.metadata.outputs.build_timestamp }}'
+      build_epoch: '${{ needs.metadata.outputs.build_epoch }}'
+      nodejs_version: '${{ needs.metadata.outputs.nodejs_version }}'
+      python_version: '${{ needs.metadata.outputs.python_version }}'
+      terraform_version: '${{ needs.metadata.outputs.terraform_version }}'
+      version: '${{ needs.metadata.outputs.version }}'
+    secrets: inherit
+  build-stage: # Recommended maximum execution time is 3 minutes
+    name: 'Build stage'
+    needs: [metadata, test-stage]
+    uses: ./.github/workflows/stage-3-build.yaml
+    if: github.ref == 'refs/heads/main' || needs.metadata.outputs.does_pull_request_exist == 'true' || (github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened'))
+    with:
+      build_datetime: '${{ needs.metadata.outputs.build_datetime }}'
+      build_timestamp: '${{ needs.metadata.outputs.build_timestamp }}'
+      build_epoch: '${{ needs.metadata.outputs.build_epoch }}'
+      nodejs_version: '${{ needs.metadata.outputs.nodejs_version }}'
+      python_version: '${{ needs.metadata.outputs.python_version }}'
+      terraform_version: '${{ needs.metadata.outputs.terraform_version }}'
+      version: '${{ needs.metadata.outputs.version }}'
+    secrets: inherit
+  acceptance-stage: # Recommended maximum execution time is 10 minutes
+    name: 'Acceptance stage'
+    needs: [metadata, build-stage]
+    uses: ./.github/workflows/stage-4-acceptance.yaml
+    if: github.ref == 'refs/heads/main' || needs.metadata.outputs.does_pull_request_exist == 'true' || (github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened'))
+    with:
+      build_datetime: '${{ needs.metadata.outputs.build_datetime }}'
+      build_timestamp: '${{ needs.metadata.outputs.build_timestamp }}'
+      build_epoch: '${{ needs.metadata.outputs.build_epoch }}'
+      nodejs_version: '${{ needs.metadata.outputs.nodejs_version }}'
+      python_version: '${{ needs.metadata.outputs.python_version }}'
+      terraform_version: '${{ needs.metadata.outputs.terraform_version }}'
+      version: '${{ needs.metadata.outputs.version }}'
+    secrets: inherit
