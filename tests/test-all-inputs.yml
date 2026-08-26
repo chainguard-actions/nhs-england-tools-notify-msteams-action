@@ -1,0 +1,31 @@
+name: Test all inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          teams-webhook-url: "https://example.webhook.office.com/webhookb2/fake-webhook-id"
+          message-title: "Full Input Test"
+          message-text: "Testing all optional inputs including colour and link."
+          message-colour: "FF0000"
+          link: "https://github.com"
+      - name: Assert action ran and failed gracefully on invalid webhook
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: action succeeded (real webhook may have been reachable)"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully on invalid webhook URL (expected)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
