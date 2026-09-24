@@ -11,6 +11,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | v1.0.5 | [`v1.0.5`](https://github.com/chainguard-actions/nhs-england-tools-notify-msteams-action/tree/v1.0.5) | [`a9fbb9b`](https://github.com/nhs-england-tools/notify-msteams-action/commit/a9fbb9bb41ef7db9c74d4fdc893f12812094fecf) |
 | v1.0.6 | [`v1.0.6`](https://github.com/chainguard-actions/nhs-england-tools-notify-msteams-action/tree/v1.0.6) | [`c0cbc55`](https://github.com/nhs-england-tools/notify-msteams-action/commit/c0cbc559871271fa387121eb519057d58d1c0d82) |
 | v1.0.7 | [`v1.0.7`](https://github.com/chainguard-actions/nhs-england-tools-notify-msteams-action/tree/v1.0.7) | [`3d354c1`](https://github.com/nhs-england-tools/notify-msteams-action/commit/3d354c122e09513108d34d93c729874da45d26a2) |
+| v1.1.0 | [`v1.1.0`](https://github.com/chainguard-actions/nhs-england-tools-notify-msteams-action/tree/v1.1.0) | [`02b92a7`](https://github.com/nhs-england-tools/notify-msteams-action/commit/02b92a76ea509f2d303d59b9c9e2bb30a224e5af) |
 
 ## Privacy
 
