@@ -14,8 +14,8 @@ runs:
     - name: 'Mask GitHub token'
       shell: bash
       env:
-        INPUT_GITHUB_TOKEN: ${{ inputs.github_token }}
-      run: echo "::add-mask::${INPUT_GITHUB_TOKEN}"
+        GITHUB_TOKEN_INPUT: ${{ inputs.github_token }}
+      run: echo "::add-mask::$GITHUB_TOKEN_INPUT"
     - name: 'Commit dist file'
       shell: bash
       env:
@@ -24,7 +24,7 @@ runs:
       run: |
         branch_name=${GITHUB_REF_NAME}
         repo_name_w_owner="${GITHUB_REPOSITORY}"
-        commit_message="${INPUT_COMMIT_MESSAGE}"
+        commit_message="$INPUT_COMMIT_MESSAGE"
 
         git add -f dist/ || true
         git add CHANGELOG.md || true

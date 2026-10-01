@@ -10,92 +10,104 @@
 
 **Harden Agent Version:** `2`
 
-Action **nhs-england-tools--notify-msteams-action/v1.1.0** was hardened automatically. 5 finding(s) were identified and resolved across 1 iteration(s).
+Action **nhs-england-tools--notify-msteams-action/v1.1.0** was hardened automatically. 2 finding(s) were identified and resolved across 2 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Rule (a): Direct ${{ github.event.repository.default_branch }} expression interpolated inside a run: shell command. The github context value is substituted into the shell script before execution, enabling script injection if the value contains shell metacharacters.
+Rule (a): ${{ }} expressions are interpolated directly inside run: shell command strings, allowing an attacker who controls the input values to inject arbitrary shell commands. Affected steps and offending lines:
+
+• check-english-usage/action.yaml line 9: `export BRANCH_NAME=origin/${{ github.event.repository.default_branch }}`
+• check-file-format/action.yaml line 9: `export BRANCH_NAME=origin/${{ github.event.repository.default_branch }}`
+• check-markdown-format/action.yaml line 9: `export BRANCH_NAME=origin/${{ github.event.repository.default_branch }}`
+• commit-release-files/action.yaml line 15: `echo "::add-mask::${{ inputs.github_token }}"`
+• commit-release-files/action.yaml line 20: `commit_message="${{ inputs.commit_message }}"`
+• commit-release-files/action.yaml lines 57-58: `gh api repos/${{ github.repository }}/...`
+• create-lines-of-code-report/action.yaml line 25: `export BUILD_DATETIME=${{ inputs.build_datetime }}`
+• create-lines-of-code-report/action.yaml line 38: `echo "secrets_exist=${{ inputs.idp_aws_report_upload_role_name != '' && ... }}" >> $GITHUB_OUTPUT`
+• create-lines-of-code-report/action.yaml lines 52-53: `${{ inputs.idp_aws_report_upload_bucket_endpoint }}/${{ inputs.build_timestamp }}`
+• perform-static-analysis/action.yaml line 17: `echo "secret_exist=${{ inputs.sonar_token != '' }}" >> $GITHUB_OUTPUT`
+• perform-static-analysis/action.yaml lines 22-24: `export SONAR_ORGANISATION_KEY=${{ inputs.sonar_organisation_key }}` etc.
+• scan-dependencies/action.yaml line 27: `export BUILD_DATETIME=${{ inputs.build_datetime }}`
+• scan-dependencies/action.yaml line 41: `export BUILD_DATETIME=${{ inputs.build_datetime }}`
+• scan-dependencies/action.yaml line 55: `echo "secrets_exist=${{ ... }}" >> $GITHUB_OUTPUT`
+• scan-dependencies/action.yaml lines 67-70: `${{ inputs.idp_aws_report_upload_bucket_endpoint }}/${{ inputs.build_timestamp }}`
+• update-major-tag/action.yaml line 15: `echo "::add-mask::${{ inputs.github_token }}"`
+• update-major-tag/action.yaml lines 20-21: `${{ inputs.full_release_version }}`, `${{ inputs.major_release_version }}`
+• update-major-tag/action.yaml lines 24-26: `gh api repos/${{ github.repository }}/...`
+
+Fix: move all ${{ }} values into env: variables and reference them as quoted shell variables (e.g. "$VAR").
 
 Locations:
 
 - `.github/actions/check-english-usage/action.yaml:9`
 - `.github/actions/check-file-format/action.yaml:9`
 - `.github/actions/check-markdown-format/action.yaml:9`
-
-### script-injection (severity: high)
-
-Rule (a): Direct ${{ inputs.* }} and ${{ github.event.pull_request.title }} expressions interpolated inside run: shell commands. In check-pr-title/action.yaml line 8, the env: block sets PR_TITLE from ${{ github.event.pull_request.title }} — this is attacker-controlled (PR title) and is a direct expression in the env: value within the step. More critically, in commit-release-files/action.yaml: line 15 uses ${{ inputs.github_token }} directly in run:, and line 22 uses ${{ inputs.commit_message }} directly in a shell variable assignment (commit_message="${{ inputs.commit_message }}"). In update-major-tag/action.yaml: line 16 uses ${{ inputs.github_token }} in run:; lines 22-23 use ${{ inputs.full_release_version }} and ${{ inputs.major_release_version }} directly in run:; line 26 uses ${{ github.repository }} directly in a gh api URL in run:. All of these allow shell metacharacter injection.
-
-Locations:
-
-- `.github/actions/check-pr-title/action.yaml:8`
 - `.github/actions/commit-release-files/action.yaml:15`
-- `.github/actions/commit-release-files/action.yaml:22`
-- `.github/actions/update-major-tag/action.yaml:16`
-- `.github/actions/update-major-tag/action.yaml:22`
-- `.github/actions/update-major-tag/action.yaml:23`
-- `.github/actions/update-major-tag/action.yaml:26`
+- `.github/actions/commit-release-files/action.yaml:20`
+- `.github/actions/commit-release-files/action.yaml:57`
+- `.github/actions/create-lines-of-code-report/action.yaml:25`
+- `.github/actions/create-lines-of-code-report/action.yaml:38`
+- `.github/actions/create-lines-of-code-report/action.yaml:52`
+- `.github/actions/perform-static-analysis/action.yaml:17`
+- `.github/actions/perform-static-analysis/action.yaml:22`
+- `.github/actions/scan-dependencies/action.yaml:27`
+- `.github/actions/scan-dependencies/action.yaml:41`
+- `.github/actions/scan-dependencies/action.yaml:55`
+- `.github/actions/scan-dependencies/action.yaml:67`
+- `.github/actions/update-major-tag/action.yaml:15`
+- `.github/actions/update-major-tag/action.yaml:20`
+- `.github/actions/update-major-tag/action.yaml:24`
 
-### script-injection (severity: high)
+### github-env-injection (severity: high)
 
-Rule (a): Direct ${{ inputs.* }} expressions interpolated inside run: shell commands in perform-static-analysis/action.yaml. Line 17: echo "secret_exist=${{ inputs.sonar_token != '' }}" >> $GITHUB_OUTPUT — inputs.sonar_token is interpolated directly. Lines 22-25: export SONAR_ORGANISATION_KEY=${{ inputs.sonar_organisation_key }}, export SONAR_PROJECT_KEY=${{ inputs.sonar_project_key }}, export SONAR_TOKEN=${{ inputs.sonar_token }} — all inputs are interpolated directly into shell export statements without quoting or env: indirection.
+Untrusted ${{ inputs.* }} expressions are written directly to $GITHUB_OUTPUT without the required sanitization step (`printf '%s' ... | tr -d '\n\r'`). An attacker-controlled newline in the input value can inject additional key=value pairs into the GitHub output context.
+
+• perform-static-analysis/action.yaml line 17: `echo "secret_exist=${{ inputs.sonar_token != '' }}" >> $GITHUB_OUTPUT` — the expression result is written unsanitized.
+• create-lines-of-code-report/action.yaml line 38: `echo "secrets_exist=${{ inputs.idp_aws_report_upload_role_name != '' && inputs.idp_aws_report_upload_bucket_endpoint != '' }}" >> $GITHUB_OUTPUT` — same pattern.
+• scan-dependencies/action.yaml line 55: `echo "secrets_exist=${{ inputs.idp_aws_report_upload_role_name != '' && inputs.idp_aws_report_upload_bucket_endpoint != '' }}" >> $GITHUB_OUTPUT` — same pattern.
+
+Fix: sanitize values before writing: `safe=$(printf '%s' "$VALUE" | tr -d '\n\r'); echo "key=$safe" >> "$GITHUB_OUTPUT"`.
 
 Locations:
 
 - `.github/actions/perform-static-analysis/action.yaml:17`
-- `.github/actions/perform-static-analysis/action.yaml:22`
-- `.github/actions/perform-static-analysis/action.yaml:23`
-- `.github/actions/perform-static-analysis/action.yaml:24`
-
-### script-injection (severity: high)
-
-Rule (a): Direct ${{ inputs.* }} expressions interpolated inside run: shell commands in create-lines-of-code-report/action.yaml. Line 26: export BUILD_DATETIME=${{ inputs.build_datetime }} — input directly in shell export. Line 38: echo "secrets_exist=${{ inputs.idp_aws_report_upload_role_name != '' && inputs.idp_aws_report_upload_bucket_endpoint != '' }}" >> $GITHUB_OUTPUT — inputs interpolated directly. Lines 47-48: ${{ inputs.idp_aws_report_upload_bucket_endpoint }}/${{ inputs.build_timestamp }}-lines-of-code-report.json.zip — inputs interpolated directly into an aws s3 cp command.
-
-Locations:
-
-- `.github/actions/create-lines-of-code-report/action.yaml:26`
 - `.github/actions/create-lines-of-code-report/action.yaml:38`
-- `.github/actions/create-lines-of-code-report/action.yaml:47`
-
-### script-injection (severity: high)
-
-Rule (a): Direct ${{ inputs.* }} expressions interpolated inside run: shell commands in scan-dependencies/action.yaml. Line 27: export BUILD_DATETIME=${{ inputs.build_datetime }}. Line 41: export BUILD_DATETIME=${{ inputs.build_datetime }} (second occurrence in 'Scan vulnerabilities' step). Line 55: echo "secrets_exist=${{ inputs.idp_aws_report_upload_role_name != '' && inputs.idp_aws_report_upload_bucket_endpoint != '' }}" >> $GITHUB_OUTPUT. Lines 63-64 and 66-67: ${{ inputs.idp_aws_report_upload_bucket_endpoint }}/${{ inputs.build_timestamp }}-*.json.zip — inputs interpolated directly into aws s3 cp commands.
-
-Locations:
-
-- `.github/actions/scan-dependencies/action.yaml:27`
-- `.github/actions/scan-dependencies/action.yaml:41`
 - `.github/actions/scan-dependencies/action.yaml:55`
-- `.github/actions/scan-dependencies/action.yaml:63`
-- `.github/actions/scan-dependencies/action.yaml:66`
 
 ## Iteration Notes
 
 ### Iteration 1
 
+**Fixes applied:** script-injection, github-env-injection
+
+**Notes:**
+
+Fixed all script-injection and github-env-injection findings across 7 action files:
+
+1. check-english-usage/action.yaml: Moved `github.event.repository.default_branch` to env var DEFAULT_BRANCH.
+2. check-file-format/action.yaml: Same fix as above.
+3. check-markdown-format/action.yaml: Same fix as above.
+4. commit-release-files/action.yaml: Moved `inputs.github_token` to env var GITHUB_TOKEN_INPUT in mask step; moved `inputs.commit_message` to env var INPUT_COMMIT_MESSAGE in commit step.
+5. create-lines-of-code-report/action.yaml: Moved `inputs.build_datetime` to INPUT_BUILD_DATETIME; moved secrets_exist boolean expression to SECRETS_EXIST env var with sanitization (printf | tr -d '\n\r') before writing to GITHUB_OUTPUT; moved bucket endpoint and timestamp to env vars.
+6. perform-static-analysis/action.yaml: Moved secret_exist boolean expression to SECRET_EXIST env var with sanitization before writing to GITHUB_OUTPUT; moved sonar_organisation_key, sonar_project_key, sonar_token to env vars.
+7. scan-dependencies/action.yaml: Moved build_datetime to INPUT_BUILD_DATETIME in both SBOM and vulnerability steps; moved secrets_exist boolean to SECRETS_EXIST env var with sanitization; moved bucket endpoint and timestamp to env vars.
+8. update-major-tag/action.yaml: Moved github_token to GITHUB_TOKEN_INPUT in mask step; moved full_release_version, major_release_version, and github.repository to env vars in update step.
+
+### Iteration 2
+
 **Fixes applied:** script-injection
 
 **Notes:**
 
-Fixed script injection in 8 action files by moving all ${{ }} expressions from run: shell commands into env: blocks:
+Fixed 4 script-injection vulnerabilities across 4 files:
 
-1. check-english-usage/action.yaml: Moved `${{ github.event.repository.default_branch }}` to env var `DEFAULT_BRANCH`.
+1. `.github/actions/check-english-usage/action.yaml` (line 10): Changed `export BRANCH_NAME=origin/$DEFAULT_BRANCH` to `export BRANCH_NAME="origin/$DEFAULT_BRANCH"` — quoting prevents word-splitting and glob expansion on the attacker-controlled `DEFAULT_BRANCH` env var.
 
-2. check-file-format/action.yaml: Same fix as above.
+2. `.github/actions/check-file-format/action.yaml` (line 10): Same fix as above.
 
-3. check-markdown-format/action.yaml: Same fix as above.
+3. `.github/actions/check-markdown-format/action.yaml` (line 10): Same fix as above.
 
-4. check-pr-title/action.yaml: Already correctly used env block for PR_TITLE — no change needed.
-
-5. commit-release-files/action.yaml: Moved `${{ inputs.github_token }}` in the mask step to env var `INPUT_GITHUB_TOKEN`; moved `${{ inputs.commit_message }}` to env var `INPUT_COMMIT_MESSAGE`.
-
-6. update-major-tag/action.yaml: Moved `${{ inputs.github_token }}` in mask step to env var; moved `${{ inputs.full_release_version }}`, `${{ inputs.major_release_version }}`, and `${{ github.repository }}` to env vars `INPUT_FULL_RELEASE_VERSION`, `INPUT_MAJOR_RELEASE_VERSION`, `INPUT_GITHUB_REPOSITORY`.
-
-7. perform-static-analysis/action.yaml: Replaced inline `${{ inputs.sonar_token != '' }}` expression with env var `INPUT_SONAR_TOKEN` and shell conditional; moved all three sonar inputs to env vars in the perform step.
-
-8. create-lines-of-code-report/action.yaml: Moved `${{ inputs.build_datetime }}` to env var; replaced inline boolean expression with shell conditional using env vars; moved bucket endpoint and timestamp to env vars in the send step.
-
-9. scan-dependencies/action.yaml: Same pattern applied to both Generate SBOM and Scan vulnerabilities steps (build_datetime); replaced inline boolean expression with shell conditional; moved bucket endpoint and timestamp to env vars in the send step.
+4. `.github/actions/perform-static-analysis/action.yaml` (line 31): Changed `echo $GITHUB_REF` to `echo "$GITHUB_REF"` inside the command substitution — quoting prevents word-splitting and glob expansion on the attacker-controlled `GITHUB_REF` environment variable, which could otherwise allow shell metacharacter injection via a crafted ref value.
 
