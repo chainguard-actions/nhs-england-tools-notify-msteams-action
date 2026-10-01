@@ -15,16 +15,16 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN_INPUT: ${{ inputs.github_token }}
-      run: echo "::add-mask::$GITHUB_TOKEN_INPUT"
+      run: echo "::add-mask::${GITHUB_TOKEN_INPUT}"
     - name: 'Commit dist file'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
-        COMMIT_MESSAGE_INPUT: ${{ inputs.commit_message }}
+        INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
       run: |
         branch_name=${GITHUB_REF_NAME}
         repo_name_w_owner="${GITHUB_REPOSITORY}"
-        commit_message="${COMMIT_MESSAGE_INPUT}"
+        commit_message="${INPUT_COMMIT_MESSAGE}"
 
         git add -f dist/ || true
         git add CHANGELOG.md || true
