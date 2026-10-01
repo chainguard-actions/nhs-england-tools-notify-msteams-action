@@ -60,15 +60,9 @@ runs:
       shell: bash
       id: check
       env:
-        ROLE_NAME: ${{ inputs.idp_aws_report_upload_role_name }}
-        BUCKET_ENDPOINT: ${{ inputs.idp_aws_report_upload_bucket_endpoint }}
+        SECRETS_EXIST: ${{ inputs.idp_aws_report_upload_role_name != '' && inputs.idp_aws_report_upload_bucket_endpoint != '' }}
       run: |
-        if [ -n "${ROLE_NAME}" ] && [ -n "${BUCKET_ENDPOINT}" ]; then
-          secrets_exist=true
-        else
-          secrets_exist=false
-        fi
-        safe=$(printf '%s' "${secrets_exist}" | tr -d '\n\r')
+        safe=$(printf '%s' "${SECRETS_EXIST}" | tr -d '\n\r')
         echo "secrets_exist=${safe}" >> "$GITHUB_OUTPUT"
     - name: "Authenticate to send the reports"
       if: steps.check.outputs.secrets_exist == 'true'

@@ -8,5 +8,5 @@ runs:
       env:
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       run: |
-        export BRANCH_NAME="origin/${DEFAULT_BRANCH}"
+        export BRANCH_NAME=origin/${DEFAULT_BRANCH}
         check=branch ./scripts/githooks/check-english-usage.sh

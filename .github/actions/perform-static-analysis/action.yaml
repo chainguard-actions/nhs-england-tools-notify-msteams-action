@@ -17,14 +17,9 @@ runs:
       shell: bash
       id: check
       env:
-        SONAR_TOKEN_VALUE: ${{ inputs.sonar_token }}
+        SECRET_EXIST: ${{ inputs.sonar_token != '' }}
       run: |
-        if [ -n "${SONAR_TOKEN_VALUE}" ]; then
-          secret_exist=true
-        else
-          secret_exist=false
-        fi
-        safe=$(printf '%s' "${secret_exist}" | tr -d '\n\r')
+        safe=$(printf '%s' "${SECRET_EXIST}" | tr -d '\n\r')
         echo "secret_exist=${safe}" >> "$GITHUB_OUTPUT"
     - name: "Perform static analysis"
       shell: bash
@@ -34,7 +29,7 @@ runs:
         SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key }}
         SONAR_TOKEN: ${{ inputs.sonar_token }}
       run: |
-        export BRANCH_NAME="${GITHUB_HEAD_REF:-$(echo "$GITHUB_REF" | sed 's#refs/heads/##')}"
+        export BRANCH_NAME=${GITHUB_HEAD_REF:-$(echo $GITHUB_REF | sed 's#refs/heads/##')}
         export SONAR_ORGANISATION_KEY="${SONAR_ORGANISATION_KEY}"
         export SONAR_PROJECT_KEY="${SONAR_PROJECT_KEY}"
         export SONAR_TOKEN="${SONAR_TOKEN}"
