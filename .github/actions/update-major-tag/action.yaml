@@ -16,24 +16,24 @@ runs:
     - name: 'Mask GitHub token'
       shell: bash
       env:
-        GITHUB_TOKEN_INPUT: ${{ inputs.github_token }}
-      run: echo "::add-mask::$GITHUB_TOKEN_INPUT"
+        INPUT_GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: echo "::add-mask::$INPUT_GITHUB_TOKEN"
     - name: 'Update major tag'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
-        FULL_RELEASE_VERSION: ${{ inputs.full_release_version }}
-        MAJOR_RELEASE_VERSION: ${{ inputs.major_release_version }}
-        GITHUB_REPOSITORY_INPUT: ${{ github.repository }}
+        INPUT_FULL_RELEASE_VERSION: ${{ inputs.full_release_version }}
+        INPUT_MAJOR_RELEASE_VERSION: ${{ inputs.major_release_version }}
+        GITHUB_REPOSITORY_NAME: ${{ github.repository }}
       run: |
-        full_tag="v$FULL_RELEASE_VERSION"
-        major_tag="v$MAJOR_RELEASE_VERSION"
+        full_tag="v${INPUT_FULL_RELEASE_VERSION}"
+        major_tag="v${INPUT_MAJOR_RELEASE_VERSION}"
 
         # Resolve the SHA the full semver tag points to
-        tag_sha=$(gh api "repos/$GITHUB_REPOSITORY_INPUT/git/ref/tags/${full_tag}" --jq '.object.sha')
+        tag_sha=$(gh api "repos/${GITHUB_REPOSITORY_NAME}/git/ref/tags/${full_tag}" --jq '.object.sha')
 
         # Delete existing major tag ref if present
-        gh api --method DELETE "repos/$GITHUB_REPOSITORY_INPUT/git/refs/tags/${major_tag}" || true
+        gh api --method DELETE "repos/${GITHUB_REPOSITORY_NAME}/git/refs/tags/${major_tag}" || true
 
         # Create the floating major tag pointing to the same SHA as the full semver tag. Marked as verified
-        gh api --method POST "repos/$GITHUB_REPOSITORY_INPUT/git/refs" -f ref="refs/tags/${major_tag}" -f sha="${tag_sha}"
+        gh api --method POST "repos/${GITHUB_REPOSITORY_NAME}/git/refs" -f ref="refs/tags/${major_tag}" -f sha="${tag_sha}"
